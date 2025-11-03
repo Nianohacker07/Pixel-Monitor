@@ -1,1 +1,2 @@
+cloudscraper>=1.2.76
 requests>=2.28
