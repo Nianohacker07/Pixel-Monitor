@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 PixelUnlock monitor using Selenium + headless Chromium.
-Reads BOT_TOKEN and CHAT_ID from environment variables only.
-Sends a single Telegram alert when the page stops showing "Server Status: Offline".
+Sends Telegram alert when server goes online.
+Reads BOT_TOKEN, CHAT_ID, PIXEL_URL, CHECK_INTERVAL_SECONDS from environment variables.
 """
 
 import os
@@ -12,8 +12,9 @@ from datetime import datetime, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import WebDriverException
+from bs4 import BeautifulSoup
 
-# Config from env
+# Config from environment
 URL = os.getenv("PIXEL_URL", "https://pixelunlocktool.com/")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL_SECONDS", "60"))
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -41,20 +42,27 @@ def make_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument(f"user-agent={USER_AGENT}")
     chrome_options.add_argument("--window-size=1920,1080")
-    # In some hosts the chrome binary is at /usr/bin/chromium or /usr/bin/chromium-browser
     chrome_binary = os.getenv("CHROME_BIN", "/usr/bin/chromium")
     if os.path.exists(chrome_binary):
         chrome_options.binary_location = chrome_binary
-    # create driver
     driver = webdriver.Chrome(options=chrome_options)
     driver.set_page_load_timeout(30)
     return driver
 
 def looks_online(html_text: str) -> bool:
-    t = html_text.lower()
-    if "server status" in t:
-        return "offline" not in t
-    return True
+    """
+    Returns True if PixelUnlockTool server is online, False if offline.
+    Uses BeautifulSoup to parse 'Server Status' element.
+    """
+    soup = BeautifulSoup(html_text, "html.parser")
+    status_text = ""
+    for tag in soup.find_all(["h1","h2","h3","div","span"]):
+        if "Server Status" in tag.get_text():
+            status_text = tag.get_text().strip().lower()
+            break
+    if status_text:
+        return "offline" not in status_text
+    return False
 
 def notify_telegram(message: str):
     try:
@@ -66,15 +74,14 @@ def notify_telegram(message: str):
         if resp.status_code != 200:
             print(f"Telegram notify failed: HTTP {resp.status_code}")
     except Exception:
-        print("Notification failed, check Railway environment variables.")
+        print("Telegram notification failed, check Railway environment variables.")
 
 def main():
     safe_startup_checks()
     print("Monitor started at", datetime.now(timezone.utc).isoformat())
     sent_alert = False
-
-    # Try to create a driver. If it fails, retry after interval.
     driver = None
+
     while True:
         try:
             if driver is None:
@@ -100,9 +107,7 @@ def main():
                 sent_alert = False
 
         except Exception as e:
-            # generic catch includes navigation timeouts, Cloudflare blocks, etc.
             print(f"Network/HTTP error occurred: {e}")
-            # if driver had a problem, recreate it next loop
             try:
                 if driver:
                     driver.quit()
