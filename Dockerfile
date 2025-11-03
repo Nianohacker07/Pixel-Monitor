@@ -1,9 +1,8 @@
-# Use slim Python base
 FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# install chrome (Chromium) and dependencies, plus fonts for headless rendering
+# Install Chromium, chromedriver and dependencies
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
     chromium \
@@ -23,17 +22,12 @@ RUN apt-get update \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
-# set chrome binary env in container so script can find it
 ENV CHROME_BIN=/usr/bin/chromium
 
-# copy code
 WORKDIR /app
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . /app
-# make script executable
 RUN chmod +x /app/pixel_watch_selenium.py
 
-# start command
 CMD ["python", "/app/pixel_watch_selenium.py"]
